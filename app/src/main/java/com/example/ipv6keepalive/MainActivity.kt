@@ -17,6 +17,9 @@ import androidx.preference.PreferenceManager
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -160,6 +163,13 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (wifiRenewEnabled && !requestRootAccess()) {
+            Toast.makeText(this, R.string.root_permission_required, Toast.LENGTH_LONG).show()
+            appendLog("Root 授权失败，已取消 Wi-Fi 定时重连")
+            switchWifiRenew.isChecked = false
+            etWifiRenewInterval.isEnabled = false
+        }
+
         saveSettings()
 
         val intent = Intent(this, KeepAliveService::class.java)
@@ -195,6 +205,31 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, R.string.service_start_failed, Toast.LENGTH_LONG).show()
             }
         }, 1500)
+    }
+
+    private fun requestRootAccess(): Boolean {
+        return try {
+            appendLog("正在请求 Root 授权...")
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val output = BufferedReader(InputStreamReader(process.inputStream)).readText()
+            val error = BufferedReader(InputStreamReader(process.errorStream)).readText()
+            if (!process.waitFor(20, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                appendLog("Root 授权超时")
+                return false
+            }
+            val exitCode = process.exitValue()
+            val granted = exitCode == 0 && output.contains("uid=0")
+            if (granted) {
+                appendLog("Root 授权成功")
+            } else {
+                appendLog("Root 授权失败: exit=$exitCode, $error")
+            }
+            granted
+        } catch (e: Exception) {
+            appendLog("Root 授权失败: ${e.message}")
+            false
+        }
     }
 
     private fun stopKeepAlive() {
