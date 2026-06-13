@@ -20,6 +20,7 @@
     <string name="target_invalid">请输入有效的 IPv6 目标地址</string>
     <string name="interval_invalid">间隔不能小于 5 秒</string>
     <string name="wifi_renew_interval_invalid">Wi-Fi 重连间隔不能小于 5 分钟</string>
+    <string name="root_permission_required">未获得 Root 授权，已关闭 Wi-Fi 定时重连</string>
     <string name="stop_service">停止服务</string>
     <string name="restart_service">重启服务</string>
     <string name="service_start_failed">服务启动失败</string>
