@@ -55,9 +55,9 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ### 许可证
 
-本项目采用 PolyForm Noncommercial License 1.0.0。
+本项目采用 MIT License。
 
-你可以在非商业目的下使用、学习、修改和分享本项目源码。未经版权持有人另行书面授权，不允许商业使用。
+你可以自由使用、复制、修改、合并、发布、分发、再授权和销售本项目副本，但需保留原始版权声明和许可证声明。
 
 完整许可证文本见 [LICENSE](LICENSE)。
 
@@ -114,8 +114,8 @@ Some Android vendors apply aggressive background restrictions. For best results,
 
 ### License
 
-This project is licensed under the PolyForm Noncommercial License 1.0.0.
+This project is licensed under the MIT License.
 
-You may use, study, modify, and share the source for noncommercial purposes. Commercial use is not permitted without separate written permission from the copyright holder.
+You may freely use, copy, modify, merge, publish, distribute, sublicense, and sell copies of this project, provided that the original copyright notice and license notice are retained.
 
 See [LICENSE](LICENSE) for the full license text.
