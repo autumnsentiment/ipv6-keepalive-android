@@ -1,0 +1,21 @@
+# Gradle / Android build output
+.gradle/
+.kotlin/
+build/
+app/build/
+
+# Local machine configuration
+local.properties
+
+# IDE files
+.idea/
+*.iml
+
+# Generated packages and logs
+*.apk
+*.ap_
+*.aab
+*.log
+
+# Bundled local Gradle distribution used during development
+gradle-8.11.1/

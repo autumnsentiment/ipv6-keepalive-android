@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- WiFi signal arcs -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:pathData="M30,55 Q54,38 78,55" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:pathData="M38,63 Q54,50 70,63" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:pathData="M22,47 Q54,26 86,47" />
+    <!-- WiFi dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,70m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+    <!-- IPv6 text -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,80 L37,80 L37,86 L43,86 L43,80 L46,80 L46,94 L43,94 L43,88 L37,88 L37,94 L34,94 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M49,80 L52,80 L52,94 L49,94 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M55,80 L58,80 L58,86 L64,86 L64,80 L67,80 L67,94 L64,94 L64,88 L58,88 L58,94 L55,94 Z" />
+</vector>

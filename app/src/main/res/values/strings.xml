@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IPv6 Keepalive</string>
+    <string name="service_status">服务状态</string>
+    <string name="status_running">运行中</string>
+    <string name="status_stopped">已停止</string>
+    <string name="service_switch">启用</string>
+    <string name="keepalive_settings">保活设置</string>
+    <string name="hint_target">目标 IPv6 地址</string>
+    <string name="hint_interval">发送间隔</string>
+    <string name="hint_gateway">IPv6 网关地址</string>
+    <string name="gateway_note">网关地址用于修复丢失的 IPv6 默认路由（需 Root），可通过 ip -6 route show dev wlan0 查看</string>
+    <string name="stats">运行统计</string>
+    <string name="service_log">服务日志</string>
+    <string name="log_waiting">等待服务启动…</string>
+    <string name="target_invalid">请输入有效的 IPv6 目标地址</string>
+    <string name="interval_invalid">间隔不能小于 5 秒</string>
+    <string name="stop_service">停止服务</string>
+    <string name="restart_service">重启服务</string>
+    <string name="service_start_failed">服务启动失败</string>
+</resources>
