@@ -25,6 +25,7 @@ import java.io.InputStreamReader
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet6Address
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -208,6 +209,14 @@ class KeepAliveService : Service() {
             return
         }
 
+        if (!hasRootAccess()) {
+            wifiRenewEnabled = false
+            wifiRenewFailCount.incrementAndGet()
+            updateNotification("未获得 Root 授权，Wi-Fi 重连已关闭")
+            Log.w(TAG, "Wi-Fi renew disabled because root access is unavailable")
+            return
+        }
+
         wifiRenewIntervalMin = wifiRenewIntervalMin.coerceAtLeast(5)
         val delayMs = wifiRenewIntervalMin * 60_000L
         wifiRenewTask = object : Runnable {
@@ -218,6 +227,25 @@ class KeepAliveService : Service() {
         }
         h.postDelayed(wifiRenewTask!!, delayMs)
         Log.i(TAG, "Wi-Fi renew loop started: interval=${wifiRenewIntervalMin}min")
+    }
+
+    private fun hasRootAccess(): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val output = BufferedReader(InputStreamReader(process.inputStream)).readText()
+            val error = BufferedReader(InputStreamReader(process.errorStream)).readText()
+            if (!process.waitFor(20, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                Log.w(TAG, "Root check timed out")
+                return false
+            }
+            val granted = process.exitValue() == 0 && output.contains("uid=0")
+            Log.i(TAG, "Root check: granted=$granted, out=$output, err=$error")
+            granted
+        } catch (e: Exception) {
+            Log.e(TAG, "Root check failed: ${e.message}")
+            false
+        }
     }
 
     private fun kickKeepAliveNow() {
