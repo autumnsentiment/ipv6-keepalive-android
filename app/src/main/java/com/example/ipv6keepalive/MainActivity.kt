@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
         const val DEFAULT_TARGET = "2001:4860:4860::8888"
         const val DEFAULT_INTERVAL = 30
         const val DEFAULT_GATEWAY = "fe80::a6a9:30ff:fecd:28bc"
+        const val DEFAULT_WIFI_RENEW_INTERVAL_MIN = 120
     }
 
     private lateinit var switchService: SwitchMaterial
@@ -32,6 +33,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etTarget: TextInputEditText
     private lateinit var etInterval: TextInputEditText
     private lateinit var etGateway: TextInputEditText
+    private lateinit var switchWifiRenew: SwitchMaterial
+    private lateinit var etWifiRenewInterval: TextInputEditText
     private lateinit var cardStats: MaterialCardView
     private lateinit var tvStats: TextView
     private lateinit var tvLog: TextView
@@ -40,6 +43,8 @@ class MainActivity : AppCompatActivity() {
     private var currentTarget: String = DEFAULT_TARGET
     private var currentInterval: Int = DEFAULT_INTERVAL
     private var currentGateway: String = DEFAULT_GATEWAY
+    private var currentWifiRenewEnabled: Boolean = false
+    private var currentWifiRenewIntervalMin: Int = DEFAULT_WIFI_RENEW_INTERVAL_MIN
     private val logBuilder = StringBuilder()
     private val handler = Handler(Looper.getMainLooper())
     private var statsRunnable: Runnable? = null
@@ -58,6 +63,8 @@ class MainActivity : AppCompatActivity() {
         etTarget = findViewById(R.id.etTarget)
         etInterval = findViewById(R.id.etInterval)
         etGateway = findViewById(R.id.etGateway)
+        switchWifiRenew = findViewById(R.id.switchWifiRenew)
+        etWifiRenewInterval = findViewById(R.id.etWifiRenewInterval)
         cardStats = findViewById(R.id.cardStats)
         tvStats = findViewById(R.id.tvStats)
         tvLog = findViewById(R.id.tvLog)
@@ -66,6 +73,9 @@ class MainActivity : AppCompatActivity() {
         etTarget.setText(currentTarget)
         etInterval.setText(currentInterval.toString())
         etGateway.setText(currentGateway)
+        switchWifiRenew.isChecked = currentWifiRenewEnabled
+        etWifiRenewInterval.setText(currentWifiRenewIntervalMin.toString())
+        etWifiRenewInterval.isEnabled = currentWifiRenewEnabled
 
         switchService.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
@@ -73,6 +83,10 @@ class MainActivity : AppCompatActivity() {
             } else {
                 stopKeepAlive()
             }
+        }
+
+        switchWifiRenew.setOnCheckedChangeListener { _, isChecked ->
+            etWifiRenewInterval.isEnabled = isChecked && !KeepAliveService.isRunning
         }
 
         requestIgnoreBatteryOptimizations()
@@ -91,6 +105,8 @@ class MainActivity : AppCompatActivity() {
         currentTarget = prefs.getString("target", DEFAULT_TARGET) ?: DEFAULT_TARGET
         currentInterval = prefs.getInt("interval", DEFAULT_INTERVAL)
         currentGateway = prefs.getString("gateway", DEFAULT_GATEWAY) ?: DEFAULT_GATEWAY
+        currentWifiRenewEnabled = prefs.getBoolean("wifi_renew_enabled", false)
+        currentWifiRenewIntervalMin = prefs.getInt("wifi_renew_interval_min", DEFAULT_WIFI_RENEW_INTERVAL_MIN)
     }
 
     private fun saveSettings() {
@@ -98,6 +114,9 @@ class MainActivity : AppCompatActivity() {
         val intervalStr = etInterval.text?.toString()?.trim()
         val interval = intervalStr?.toIntOrNull() ?: DEFAULT_INTERVAL
         val gateway = etGateway.text?.toString()?.trim() ?: DEFAULT_GATEWAY
+        val wifiRenewEnabled = switchWifiRenew.isChecked
+        val wifiRenewInterval = etWifiRenewInterval.text?.toString()?.trim()?.toIntOrNull()
+            ?: DEFAULT_WIFI_RENEW_INTERVAL_MIN
 
         if (target.isNotEmpty() && interval >= 5) {
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
@@ -105,10 +124,14 @@ class MainActivity : AppCompatActivity() {
                 .putString("target", target)
                 .putInt("interval", interval)
                 .putString("gateway", gateway)
+                .putBoolean("wifi_renew_enabled", wifiRenewEnabled)
+                .putInt("wifi_renew_interval_min", wifiRenewInterval)
                 .apply()
             currentTarget = target
             currentInterval = interval
             currentGateway = gateway
+            currentWifiRenewEnabled = wifiRenewEnabled
+            currentWifiRenewIntervalMin = wifiRenewInterval
         }
     }
 
@@ -116,6 +139,8 @@ class MainActivity : AppCompatActivity() {
         val target = etTarget.text?.toString()?.trim() ?: ""
         val intervalStr = etInterval.text?.toString()?.trim()
         val interval = intervalStr?.toIntOrNull() ?: 0
+        val wifiRenewEnabled = switchWifiRenew.isChecked
+        val wifiRenewInterval = etWifiRenewInterval.text?.toString()?.trim()?.toIntOrNull() ?: 0
 
         if (target.isEmpty()) {
             Toast.makeText(this, R.string.target_invalid, Toast.LENGTH_SHORT).show()
@@ -129,12 +154,20 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (wifiRenewEnabled && wifiRenewInterval < 5) {
+            Toast.makeText(this, R.string.wifi_renew_interval_invalid, Toast.LENGTH_SHORT).show()
+            switchService.isChecked = false
+            return
+        }
+
         saveSettings()
 
         val intent = Intent(this, KeepAliveService::class.java)
         intent.putExtra("target", currentTarget)
         intent.putExtra("interval", currentInterval)
         intent.putExtra("gateway", currentGateway)
+        intent.putExtra("wifiRenewEnabled", currentWifiRenewEnabled)
+        intent.putExtra("wifiRenewIntervalMin", currentWifiRenewIntervalMin)
         intent.putExtra("action", "start")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -148,7 +181,12 @@ class MainActivity : AppCompatActivity() {
         handler.postDelayed({
             if (KeepAliveService.isRunning) {
                 updateStatusUI(true)
-                appendLog("服务已启动，目标: $currentTarget，间隔: ${currentInterval}s")
+                val renewText = if (currentWifiRenewEnabled) {
+                    "，Wi-Fi 重连间隔: ${currentWifiRenewIntervalMin}分钟"
+                } else {
+                    ""
+                }
+                appendLog("服务已启动，目标: $currentTarget，间隔: ${currentInterval}s$renewText")
                 startStatsPolling()
             } else {
                 appendLog("服务启动失败")
@@ -189,6 +227,8 @@ class MainActivity : AppCompatActivity() {
             etTarget.isEnabled = false
             etInterval.isEnabled = false
             etGateway.isEnabled = false
+            switchWifiRenew.isEnabled = false
+            etWifiRenewInterval.isEnabled = false
         } else {
             tvStatus.text = getString(R.string.status_stopped)
             tvStatus.setTextColor(getColor(android.R.color.holo_red_dark))
@@ -197,6 +237,8 @@ class MainActivity : AppCompatActivity() {
             etTarget.isEnabled = true
             etInterval.isEnabled = true
             etGateway.isEnabled = true
+            switchWifiRenew.isEnabled = true
+            etWifiRenewInterval.isEnabled = switchWifiRenew.isChecked
         }
     }
 
@@ -211,7 +253,13 @@ class MainActivity : AppCompatActivity() {
                         val elapsed = (System.currentTimeMillis() - KeepAliveService.lastSuccessTime.get()) / 1000
                         "${elapsed}s前"
                     } else "无"
-                    tvStats.text = "成功: $s\n失败: $f\n最近成功: $lastTime"
+                    val renewCount = KeepAliveService.wifiRenewCount.get()
+                    val renewFail = KeepAliveService.wifiRenewFailCount.get()
+                    val lastRenew = if (KeepAliveService.lastWifiRenewTime.get() > 0) {
+                        val elapsed = (System.currentTimeMillis() - KeepAliveService.lastWifiRenewTime.get()) / 1000
+                        "${elapsed}s前"
+                    } else "无"
+                    tvStats.text = "成功: $s\n失败: $f\n最近成功: $lastTime\nWi-Fi 重连: $renewCount\n重连失败: $renewFail\n最近重连: $lastRenew"
                     handler.postDelayed(this, 3000)
                 } else {
                     switchService.isChecked = false

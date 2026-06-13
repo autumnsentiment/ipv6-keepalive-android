@@ -47,16 +47,22 @@ class KeepAliveService : Service() {
         val failCount = AtomicInteger(0)
         val lastSuccessTime = AtomicLong(0)
         val lastKeepAliveTime = AtomicLong(0)
+        val wifiRenewCount = AtomicInteger(0)
+        val wifiRenewFailCount = AtomicInteger(0)
+        val lastWifiRenewTime = AtomicLong(0)
     }
 
     private var handler: Handler? = null
     private var workerThread: HandlerThread? = null
     private var keepAliveTask: Runnable? = null
+    private var wifiRenewTask: Runnable? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var target: String = "2001:4860:4860::8888"
     private var intervalSec: Int = 30
     private var gateway: String = "fe80::a6a9:30ff:fecd:28bc"
+    private var wifiRenewEnabled: Boolean = false
+    private var wifiRenewIntervalMin: Int = 120
     private var notifManager: NotificationManager? = null
     private var prefs: SharedPreferences? = null
     private val isKeepAliveRunning = AtomicBoolean(false)
@@ -87,6 +93,7 @@ class KeepAliveService : Service() {
             // 系统重启服务，使用保存的设置
             loadSavedSettings()
             startKeepAliveLoop()
+            startWifiRenewLoop()
             scheduleAlarm()
             return START_STICKY
         }
@@ -112,12 +119,18 @@ class KeepAliveService : Service() {
                 target = intent.getStringExtra("target") ?: target
                 intervalSec = intent.getIntExtra("interval", intervalSec)
                 gateway = intent.getStringExtra("gateway") ?: gateway
+                wifiRenewEnabled = intent.getBooleanExtra("wifiRenewEnabled", wifiRenewEnabled)
+                wifiRenewIntervalMin = intent.getIntExtra("wifiRenewIntervalMin", wifiRenewIntervalMin)
 
                 successCount.set(0)
                 failCount.set(0)
                 lastSuccessTime.set(0)
+                wifiRenewCount.set(0)
+                wifiRenewFailCount.set(0)
+                lastWifiRenewTime.set(0)
 
                 startKeepAliveLoop()
+                startWifiRenewLoop()
                 scheduleAlarm()
             }
         }
@@ -130,6 +143,8 @@ class KeepAliveService : Service() {
             target = it.getString("target", "2001:4860:4860::8888") ?: "2001:4860:4860::8888"
             intervalSec = it.getInt("interval", 30)
             gateway = it.getString("gateway", "fe80::a6a9:30ff:fecd:28bc") ?: "fe80::a6a9:30ff:fecd:28bc"
+            wifiRenewEnabled = it.getBoolean("wifi_renew_enabled", false)
+            wifiRenewIntervalMin = it.getInt("wifi_renew_interval_min", 120)
         }
     }
 
@@ -176,6 +191,33 @@ class KeepAliveService : Service() {
         // 立即执行一次
         h.post(keepAliveTask!!)
         Log.i(TAG, "Keepalive loop started: target=$target, interval=${intervalSec}s")
+    }
+
+    private fun startWifiRenewLoop() {
+        val h = handler
+        if (h == null) {
+            Log.w(TAG, "Worker handler not ready, cannot start Wi-Fi renew loop")
+            return
+        }
+
+        wifiRenewTask?.let { h.removeCallbacks(it) }
+        wifiRenewTask = null
+
+        if (!wifiRenewEnabled) {
+            Log.i(TAG, "Wi-Fi renew loop disabled")
+            return
+        }
+
+        wifiRenewIntervalMin = wifiRenewIntervalMin.coerceAtLeast(5)
+        val delayMs = wifiRenewIntervalMin * 60_000L
+        wifiRenewTask = object : Runnable {
+            override fun run() {
+                renewWifiLease()
+                h.postDelayed(this, delayMs)
+            }
+        }
+        h.postDelayed(wifiRenewTask!!, delayMs)
+        Log.i(TAG, "Wi-Fi renew loop started: interval=${wifiRenewIntervalMin}min")
     }
 
     private fun kickKeepAliveNow() {
@@ -231,6 +273,70 @@ class KeepAliveService : Service() {
             Log.e(TAG, "Keepalive error: ${e.message}")
             updateNotification()
         }
+    }
+
+    private fun renewWifiLease() {
+        if (!wifiRenewEnabled) return
+
+        try {
+            Log.i(TAG, "Renewing Wi-Fi lease by toggling Wi-Fi")
+            updateNotification("正在重连 Wi-Fi 续租...")
+
+            val disableExit = runRootCommand("svc wifi disable")
+            if (disableExit != 0) {
+                wifiRenewFailCount.incrementAndGet()
+                Log.w(TAG, "Wi-Fi disable failed with exit=$disableExit")
+                updateNotification("Wi-Fi 重连失败：Root 命令不可用")
+                return
+            }
+
+            Thread.sleep(3000)
+
+            val enableExit = runRootCommand("svc wifi enable")
+            if (enableExit != 0) {
+                wifiRenewFailCount.incrementAndGet()
+                Log.w(TAG, "Wi-Fi enable failed with exit=$enableExit")
+                updateNotification("Wi-Fi 重连失败：无法重新开启")
+                return
+            }
+
+            lastWifiRenewTime.set(System.currentTimeMillis())
+            wifiRenewCount.incrementAndGet()
+            Log.i(TAG, "Wi-Fi toggled, waiting for IPv6 network")
+
+            waitForIpv6Network(45_000L)
+            kickKeepAliveNow()
+            updateNotification("Wi-Fi 已重连，正在恢复保活")
+        } catch (e: Exception) {
+            wifiRenewFailCount.incrementAndGet()
+            Log.e(TAG, "Wi-Fi renew failed: ${e.message}")
+            updateNotification("Wi-Fi 重连失败")
+        }
+    }
+
+    private fun runRootCommand(command: String): Int {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+            val output = BufferedReader(InputStreamReader(process.inputStream)).readText()
+            val error = BufferedReader(InputStreamReader(process.errorStream)).readText()
+            process.waitFor()
+            Log.i(TAG, "Root command '$command': out=$output, err=$error, exit=${process.exitValue()}")
+            process.exitValue()
+        } catch (e: Exception) {
+            Log.e(TAG, "Root command '$command' failed: ${e.message}")
+            -1
+        }
+    }
+
+    private fun waitForIpv6Network(timeoutMs: Long): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (findIpv6Network() != null) {
+                return true
+            }
+            Thread.sleep(2000)
+        }
+        return false
     }
 
     private fun findIpv6Network(): SelectedNetwork? {
@@ -456,11 +562,13 @@ class KeepAliveService : Service() {
         val text = customText ?: run {
             val s = successCount.get()
             val f = failCount.get()
+            val r = wifiRenewCount.get()
+            val rf = wifiRenewFailCount.get()
             val lastTime = if (lastSuccessTime.get() > 0) {
                 val elapsed = (System.currentTimeMillis() - lastSuccessTime.get()) / 1000
                 "${elapsed}s前"
             } else "无"
-            "成功: $s | 失败: $f | 最近: $lastTime"
+            "成功: $s | 失败: $f | 重连: $r/$rf | 最近: $lastTime"
         }
         try {
             notifManager?.notify(NOTIF_ID, createNotification(text))
@@ -478,6 +586,7 @@ class KeepAliveService : Service() {
 
         handler?.removeCallbacksAndMessages(null)
         handler = null
+        wifiRenewTask = null
         workerThread?.quitSafely()
         workerThread = null
         cancelAlarm()
@@ -501,6 +610,8 @@ class KeepAliveService : Service() {
             putExtra("target", target)
             putExtra("interval", intervalSec)
             putExtra("gateway", gateway)
+            putExtra("wifiRenewEnabled", wifiRenewEnabled)
+            putExtra("wifiRenewIntervalMin", wifiRenewIntervalMin)
         }
 
         val pendingIntent = PendingIntent.getService(

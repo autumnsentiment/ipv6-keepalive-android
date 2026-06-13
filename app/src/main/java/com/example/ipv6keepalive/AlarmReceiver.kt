@@ -16,6 +16,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("target", prefs.getString("target", "2001:4860:4860::8888"))
                 putExtra("interval", prefs.getInt("interval", 30))
                 putExtra("gateway", prefs.getString("gateway", "fe80::a6a9:30ff:fecd:28bc"))
+                putExtra("wifiRenewEnabled", prefs.getBoolean("wifi_renew_enabled", false))
+                putExtra("wifiRenewIntervalMin", prefs.getInt("wifi_renew_interval_min", 120))
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

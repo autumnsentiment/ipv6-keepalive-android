@@ -16,6 +16,7 @@ IPv6 Keepalive Android 是一个轻量级 Android 工具，用于通过前台服
 - UDP 发送失败后使用 `ping6` 作为备用检测方式。
 - 使用 CPU WakeLock 和 Wi-Fi Lock，降低系统休眠对保活的影响。
 - 使用 AlarmManager 定时唤醒，帮助服务在被系统中断后恢复。
+- 可选 Root 定时重连 Wi-Fi，通过 `svc wifi disable/enable` 触发重新连接和地址续租。
 - 支持开机后按已保存设置自动启动。
 - 应用内可配置目标地址、发送间隔、网关地址，并查看运行状态与成功/失败统计。
 - 支持可选的 root 路径修复 IPv6 默认路由。
@@ -51,6 +52,8 @@ app/build/outputs/apk/debug/app-debug.apk
 
 应用会请求网络、前台服务、WakeLock、开机广播、通知和精确闹钟等权限，用于后台保活、前台服务通知、重启恢复和定时唤醒。
 
+定时重连 Wi-Fi 续租功能需要 root 权限。开启后应用会按设置间隔执行 `svc wifi disable` 和 `svc wifi enable`，期间网络会短暂断开。
+
 部分 Android 厂商系统会施加更激进的后台限制。为了获得更稳定的保活效果，建议允许本应用忽略电池优化。
 
 ### 许可证
@@ -75,6 +78,7 @@ IPv6 Keepalive Android is a lightweight Android utility that periodically sends 
 - Fallback `ping6` check when UDP sending fails.
 - CPU WakeLock and Wi-Fi Lock support to reduce idle interruption.
 - AlarmManager wakeups to help recover from service interruption.
+- Optional root-based scheduled Wi-Fi reconnect using `svc wifi disable/enable` to trigger reconnect and address lease renewal.
 - Optional boot receiver restart using saved settings.
 - In-app controls for target address, interval, gateway, status, and basic success/failure statistics.
 - Optional root-based IPv6 default route repair using the configured gateway.
@@ -109,6 +113,8 @@ app/build/outputs/apk/debug/app-debug.apk
 ### Permissions
 
 The app requests network, foreground service, WakeLock, boot completed, notification, and exact alarm related permissions so the keepalive service can run in the background and recover after reboot where supported by the device.
+
+The scheduled Wi-Fi reconnect lease renewal feature requires root access. When enabled, the app runs `svc wifi disable` and `svc wifi enable` at the configured interval, causing a brief network interruption.
 
 Some Android vendors apply aggressive background restrictions. For best results, allow battery optimization exemptions for this app.
 
