@@ -26,8 +26,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val DEFAULT_TARGET = "2001:4860:4860::8888"
         const val DEFAULT_INTERVAL = 30
-        const val DEFAULT_GATEWAY = "fe80::a6a9:30ff:fecd:28bc"
+        const val DEFAULT_GATEWAY = ""
         const val DEFAULT_WIFI_RENEW_INTERVAL_MIN = 120
+        private const val LEGACY_DEFAULT_GATEWAY = "fe80::a6a9:30ff:fecd:28bc"
     }
 
     private lateinit var switchService: SwitchMaterial
@@ -107,7 +108,11 @@ class MainActivity : AppCompatActivity() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         currentTarget = prefs.getString("target", DEFAULT_TARGET) ?: DEFAULT_TARGET
         currentInterval = prefs.getInt("interval", DEFAULT_INTERVAL)
-        currentGateway = prefs.getString("gateway", DEFAULT_GATEWAY) ?: DEFAULT_GATEWAY
+        val savedGateway = prefs.getString("gateway", DEFAULT_GATEWAY)
+        currentGateway = normalizeGateway(savedGateway)
+        if (savedGateway == LEGACY_DEFAULT_GATEWAY) {
+            prefs.edit().putString("gateway", DEFAULT_GATEWAY).apply()
+        }
         currentWifiRenewEnabled = prefs.getBoolean("wifi_renew_enabled", false)
         currentWifiRenewIntervalMin = prefs.getInt("wifi_renew_interval_min", DEFAULT_WIFI_RENEW_INTERVAL_MIN)
     }
@@ -116,7 +121,7 @@ class MainActivity : AppCompatActivity() {
         val target = etTarget.text?.toString()?.trim() ?: DEFAULT_TARGET
         val intervalStr = etInterval.text?.toString()?.trim()
         val interval = intervalStr?.toIntOrNull() ?: DEFAULT_INTERVAL
-        val gateway = etGateway.text?.toString()?.trim() ?: DEFAULT_GATEWAY
+        val gateway = normalizeGateway(etGateway.text?.toString())
         val wifiRenewEnabled = switchWifiRenew.isChecked
         val wifiRenewInterval = etWifiRenewInterval.text?.toString()?.trim()?.toIntOrNull()
             ?: DEFAULT_WIFI_RENEW_INTERVAL_MIN
@@ -136,6 +141,11 @@ class MainActivity : AppCompatActivity() {
             currentWifiRenewEnabled = wifiRenewEnabled
             currentWifiRenewIntervalMin = wifiRenewInterval
         }
+    }
+
+    private fun normalizeGateway(value: String?): String {
+        val trimmed = value?.trim().orEmpty()
+        return if (trimmed == LEGACY_DEFAULT_GATEWAY) DEFAULT_GATEWAY else trimmed
     }
 
     private fun startKeepAlive() {

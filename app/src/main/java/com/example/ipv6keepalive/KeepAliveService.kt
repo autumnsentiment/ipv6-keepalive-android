@@ -39,6 +39,7 @@ class KeepAliveService : Service() {
         const val ACTION_START = "com.example.ipv6keepalive.START"
         const val ACTION_STOP = "com.example.ipv6keepalive.STOP"
         const val ACTION_KEEPALIVE = "com.example.ipv6keepalive.KEEPALIVE"
+        private const val LEGACY_DEFAULT_GATEWAY = "fe80::a6a9:30ff:fecd:28bc"
 
         @Volatile
         var isRunning = false
@@ -61,17 +62,21 @@ class KeepAliveService : Service() {
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var target: String = "2001:4860:4860::8888"
     private var intervalSec: Int = 30
-    private var gateway: String = "fe80::a6a9:30ff:fecd:28bc"
+    private var gateway: String = ""
     private var wifiRenewEnabled: Boolean = false
     private var wifiRenewIntervalMin: Int = 120
     private var notifManager: NotificationManager? = null
     private var prefs: SharedPreferences? = null
     private val isKeepAliveRunning = AtomicBoolean(false)
+    private var rootAccessGranted = false
+    private var lastRouteFixAttemptTime = 0L
+    private val lastAutoGateways = mutableMapOf<String, String>()
 
     private data class SelectedNetwork(
         val network: Network,
         val interfaceName: String?,
-        val isWifi: Boolean
+        val isWifi: Boolean,
+        val gateway: String?
     )
 
     override fun onCreate() {
@@ -119,7 +124,7 @@ class KeepAliveService : Service() {
                 // ACTION_START or normal start
                 target = intent.getStringExtra("target") ?: target
                 intervalSec = intent.getIntExtra("interval", intervalSec)
-                gateway = intent.getStringExtra("gateway") ?: gateway
+                gateway = normalizeGateway(intent.getStringExtra("gateway") ?: gateway)
                 wifiRenewEnabled = intent.getBooleanExtra("wifiRenewEnabled", wifiRenewEnabled)
                 wifiRenewIntervalMin = intent.getIntExtra("wifiRenewIntervalMin", wifiRenewIntervalMin)
 
@@ -143,7 +148,7 @@ class KeepAliveService : Service() {
         prefs?.let {
             target = it.getString("target", "2001:4860:4860::8888") ?: "2001:4860:4860::8888"
             intervalSec = it.getInt("interval", 30)
-            gateway = it.getString("gateway", "fe80::a6a9:30ff:fecd:28bc") ?: "fe80::a6a9:30ff:fecd:28bc"
+            gateway = normalizeGateway(it.getString("gateway", ""))
             wifiRenewEnabled = it.getBoolean("wifi_renew_enabled", false)
             wifiRenewIntervalMin = it.getInt("wifi_renew_interval_min", 120)
         }
@@ -216,6 +221,7 @@ class KeepAliveService : Service() {
             Log.w(TAG, "Wi-Fi renew disabled because root access is unavailable")
             return
         }
+        rootAccessGranted = true
 
         wifiRenewIntervalMin = wifiRenewIntervalMin.coerceAtLeast(5)
         val delayMs = wifiRenewIntervalMin * 60_000L
@@ -237,13 +243,16 @@ class KeepAliveService : Service() {
             if (!process.waitFor(20, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
                 Log.w(TAG, "Root check timed out")
+                rootAccessGranted = false
                 return false
             }
             val granted = process.exitValue() == 0 && output.contains("uid=0")
+            rootAccessGranted = granted
             Log.i(TAG, "Root check: granted=$granted, out=$output, err=$error")
             granted
         } catch (e: Exception) {
             Log.e(TAG, "Root check failed: ${e.message}")
+            rootAccessGranted = false
             false
         }
     }
@@ -272,7 +281,7 @@ class KeepAliveService : Service() {
             val hasRoute = hasDefaultRoute(selectedNetwork)
             if (!hasRoute) {
                 Log.w(TAG, "No default IPv6 route, attempting fix...")
-                fixRoute(selectedNetwork.interfaceName)
+                fixRoute(selectedNetwork)
             }
 
             // 3. 发送 UDP 保活包
@@ -389,7 +398,18 @@ class KeepAliveService : Service() {
 
                 if (!hasIpv6) continue
 
-                val selected = SelectedNetwork(network, linkProperties.interfaceName, isWifi)
+                val interfaceName = linkProperties.interfaceName
+                val detectedGateway = findIpv6Gateway(interfaceName, linkProperties)
+                if (!detectedGateway.isNullOrBlank() && !interfaceName.isNullOrBlank()) {
+                    lastAutoGateways[interfaceName] = detectedGateway
+                }
+
+                val selected = SelectedNetwork(
+                    network = network,
+                    interfaceName = interfaceName,
+                    isWifi = isWifi,
+                    gateway = detectedGateway ?: interfaceName?.let { lastAutoGateways[it] }
+                )
                 if (isWifi) {
                     val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     if (hasInternet) return selected
@@ -405,6 +425,53 @@ class KeepAliveService : Service() {
         }
     }
 
+    private fun findIpv6Gateway(
+        interfaceName: String?,
+        linkProperties: android.net.LinkProperties
+    ): String? {
+        val routeGateway = linkProperties.routes
+            .firstOrNull { route ->
+                route.isDefaultRoute &&
+                    route.gateway is Inet6Address
+            }
+            ?.gateway
+            ?.hostAddress
+
+        if (!routeGateway.isNullOrBlank()) {
+            return stripIpv6Scope(routeGateway)
+        }
+
+        val safeInterface = interfaceName?.takeIf { it.matches(Regex("[A-Za-z0-9_.:-]+")) }
+            ?: return null
+
+        return try {
+            val process = Runtime.getRuntime().exec(
+                arrayOf("ip", "-6", "route", "show", "default", "dev", safeInterface)
+            )
+            val output = BufferedReader(InputStreamReader(process.inputStream)).readText()
+            if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+            }
+            Regex("""default\s+via\s+([0-9A-Fa-f:.%]+)""")
+                .find(output)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.let { stripIpv6Scope(it) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto gateway lookup failed: ${e.message}")
+            null
+        }
+    }
+
+    private fun stripIpv6Scope(address: String): String {
+        return address.substringBefore('%').trim()
+    }
+
+    private fun normalizeGateway(value: String?): String {
+        val trimmed = value?.trim().orEmpty()
+        return if (trimmed == LEGACY_DEFAULT_GATEWAY) "" else trimmed
+    }
+
     private fun hasDefaultRoute(selectedNetwork: SelectedNetwork): Boolean {
         return try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -418,16 +485,40 @@ class KeepAliveService : Service() {
         }
     }
 
-    private fun fixRoute(interfaceName: String?) {
-        val safeInterface = interfaceName?.takeIf { it.matches(Regex("[A-Za-z0-9_.:-]+")) }
+    private fun fixRoute(selectedNetwork: SelectedNetwork) {
+        val safeInterface = selectedNetwork.interfaceName?.takeIf { it.matches(Regex("[A-Za-z0-9_.:-]+")) }
         if (safeInterface == null) {
             Log.w(TAG, "Skip route fix: unknown or unsafe interface name")
             return
         }
 
+        val manualGateway = normalizeGateway(gateway)
+        val selectedGateway = if (manualGateway.isNotEmpty()) {
+            manualGateway
+        } else {
+            selectedNetwork.gateway.orEmpty()
+        }
+
+        if (selectedGateway.isBlank()) {
+            Log.w(TAG, "Skip route fix: no manual or auto IPv6 gateway")
+            return
+        }
+
+        if (!rootAccessGranted) {
+            Log.w(TAG, "Skip route fix: root has not been granted in this service session")
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastRouteFixAttemptTime < 10 * 60_000L) {
+            Log.d(TAG, "Skip route fix: cooldown active")
+            return
+        }
+        lastRouteFixAttemptTime = now
+
         try {
             // 先删除旧默认路由，再添加新的
-            val command = "ip -6 route del default dev $safeInterface 2>/dev/null; ip -6 route add default via $gateway dev $safeInterface"
+            val command = "ip -6 route del default dev $safeInterface 2>/dev/null; ip -6 route add default via $selectedGateway dev $safeInterface"
             val delCmd = arrayOf("su", "-c", command)
             val process = Runtime.getRuntime().exec(delCmd)
             val output = BufferedReader(InputStreamReader(process.inputStream)).readText()

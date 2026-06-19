@@ -158,7 +158,6 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:inputType="textUri"
-                            android:text="fe80::a6a9:30ff:fecd:28bc"
                             android:singleLine="true" />
 
                     </com.google.android.material.textfield.TextInputLayout>
