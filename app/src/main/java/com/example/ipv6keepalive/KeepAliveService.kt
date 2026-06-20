@@ -49,6 +49,12 @@ class KeepAliveService : Service() {
         val failCount = AtomicInteger(0)
         val lastSuccessTime = AtomicLong(0)
         val lastKeepAliveTime = AtomicLong(0)
+        @Volatile
+        var lastAutoGateway: String = ""
+            private set
+        @Volatile
+        var lastAutoGatewayInterface: String = ""
+            private set
         val wifiRenewCount = AtomicInteger(0)
         val wifiRenewFailCount = AtomicInteger(0)
         val lastWifiRenewTime = AtomicLong(0)
@@ -131,6 +137,8 @@ class KeepAliveService : Service() {
                 successCount.set(0)
                 failCount.set(0)
                 lastSuccessTime.set(0)
+                lastAutoGateway = ""
+                lastAutoGatewayInterface = ""
                 wifiRenewCount.set(0)
                 wifiRenewFailCount.set(0)
                 lastWifiRenewTime.set(0)
@@ -291,7 +299,6 @@ class KeepAliveService : Service() {
                 lastSuccessTime.set(System.currentTimeMillis())
                 Log.d(TAG, "Keepalive packet sent OK via ${selectedNetwork.interfaceName ?: "unknown"}")
             } else {
-                failCount.incrementAndGet()
                 Log.w(TAG, "Keepalive packet send failed, trying ping6...")
                 // 备用：ping6
                 if (pingIPv6(selectedNetwork.interfaceName)) {
@@ -299,6 +306,7 @@ class KeepAliveService : Service() {
                     lastSuccessTime.set(System.currentTimeMillis())
                     Log.d(TAG, "Ping6 OK")
                 } else {
+                    failCount.incrementAndGet()
                     Log.w(TAG, "All keepalive methods failed")
                 }
             }
@@ -400,8 +408,12 @@ class KeepAliveService : Service() {
 
                 val interfaceName = linkProperties.interfaceName
                 val detectedGateway = findIpv6Gateway(interfaceName, linkProperties)
-                if (!detectedGateway.isNullOrBlank() && !interfaceName.isNullOrBlank()) {
-                    lastAutoGateways[interfaceName] = detectedGateway
+                if (!detectedGateway.isNullOrBlank()) {
+                    lastAutoGateway = detectedGateway
+                    lastAutoGatewayInterface = interfaceName.orEmpty()
+                    if (!interfaceName.isNullOrBlank()) {
+                        lastAutoGateways[interfaceName] = detectedGateway
+                    }
                 }
 
                 val selected = SelectedNetwork(
@@ -683,11 +695,16 @@ class KeepAliveService : Service() {
             val f = failCount.get()
             val r = wifiRenewCount.get()
             val rf = wifiRenewFailCount.get()
+            val gatewayText = if (lastAutoGateway.isNotBlank()) {
+                " | 网关: $lastAutoGateway"
+            } else {
+                ""
+            }
             val lastTime = if (lastSuccessTime.get() > 0) {
                 val elapsed = (System.currentTimeMillis() - lastSuccessTime.get()) / 1000
                 "${elapsed}s前"
             } else "无"
-            "成功: $s | 失败: $f | 重连: $r/$rf | 最近: $lastTime"
+            "成功: $s | 失败: $f | 重连: $r/$rf | 最近: $lastTime$gatewayText"
         }
         try {
             notifManager?.notify(NOTIF_ID, createNotification(text))

@@ -304,7 +304,18 @@ class MainActivity : AppCompatActivity() {
                         val elapsed = (System.currentTimeMillis() - KeepAliveService.lastWifiRenewTime.get()) / 1000
                         "${elapsed}s前"
                     } else "无"
-                    tvStats.text = "成功: $s\n失败: $f\n最近成功: $lastTime\nWi-Fi 重连: $renewCount\n重连失败: $renewFail\n最近重连: $lastRenew"
+                    val autoGateway = KeepAliveService.lastAutoGateway
+                    val autoGatewayInterface = KeepAliveService.lastAutoGatewayInterface
+                    val autoGatewayText = if (autoGateway.isNotBlank()) {
+                        if (autoGatewayInterface.isNotBlank()) {
+                            "$autoGateway ($autoGatewayInterface)"
+                        } else {
+                            autoGateway
+                        }
+                    } else {
+                        "未获取"
+                    }
+                    tvStats.text = "成功: $s\n失败: $f\n最近成功: $lastTime\n自动网关: $autoGatewayText\nWi-Fi 重连: $renewCount\n重连失败: $renewFail\n最近重连: $lastRenew"
                     handler.postDelayed(this, 3000)
                 } else {
                     switchService.isChecked = false
