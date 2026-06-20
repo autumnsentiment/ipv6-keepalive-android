@@ -170,6 +170,15 @@
                         android:textSize="12sp"
                         android:textColor="?android:attr/textColorSecondary" />
 
+                    <TextView
+                        android:id="@+id/tvAutoGateway"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/auto_gateway_unavailable"
+                        android:textSize="12sp"
+                        android:textColor="?android:attr/textColorSecondary" />
+
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/switchWifiRenew"
                         android:layout_width="match_parent"

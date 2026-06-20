@@ -10,6 +10,7 @@
     <string name="hint_interval">发送间隔</string>
     <string name="hint_gateway">IPv6 网关地址（可选）</string>
     <string name="gateway_note">网关地址可留空自动获取；手动填写会优先用于修复丢失的 IPv6 默认路由（需 Root）。</string>
+    <string name="auto_gateway_unavailable">自动网关: 未获取</string>
     <string name="wifi_renew_switch">Root 定时重连 Wi-Fi 续租</string>
     <string name="hint_wifi_renew_interval">Wi-Fi 重连间隔</string>
     <string name="minute_suffix">分钟</string>
